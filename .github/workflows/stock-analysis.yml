@@ -1,0 +1,102 @@
+name: 股票板块60日线分析
+
+on:
+  # 推送到main分支时触发
+  push:
+    branches: [ main, master ]
+  
+  # 每天上午9:00和下午15:30运行（A股开盘和收盘后）
+  schedule:
+    - cron: '0 1 * * *'    # 北京时间9:00
+    - cron: '30 7 * * *'   # 北京时间15:30
+  
+  # 允许手动触发
+  workflow_dispatch:
+    inputs:
+      block_name:
+        description: '板块名称'
+        required: false
+        default: '银行'
+      source_type:
+        description: '数据源类型 (xml/sw)'
+        required: false
+        default: 'sw'
+
+jobs:
+  stock-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+    
+    - name: 设置Python环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: 安装系统依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+    
+    - name: 缓存pip依赖
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: 安装Python依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: 运行股票分析脚本
+      env:
+        QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
+        AUTH_CODE: ${{ secrets.AUTH_CODE }}
+        RECEIVER: ${{ secrets.RECEIVER }}
+      run: |
+        # 根据触发方式选择运行参数
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # 手动触发，使用输入参数
+          python 通信.py <<EOF
+          ${{ github.event.inputs.block_name }}
+          ${{ github.event.inputs.source_type }}
+          EOF
+        else
+          # 定时触发，使用默认配置
+          python 通信.py
+        fi
+    
+    - name: 上传分析结果
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: stock-analysis-results-${{ github.run_number }}
+        path: |
+          *.png
+          *.log
+        retention-days: 30
+    
+    - name: 上传分析结果
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: stock-analysis-results-${{ github.run_number }}
+        path: |
+          *.png
+          *.log
+        retention-days: 30
+    
+    - name: 上传分析结果
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: stock-analysis-results-${{ github.run_number }}
+        path: |
+          *.png
+          *.log
+        retention-days: 30
