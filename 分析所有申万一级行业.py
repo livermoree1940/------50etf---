@@ -1,18 +1,6 @@
-# ==================  用户只用改这一小段  ==================
-BLOCK_NAME      = "银行"           # 板块中文名（任意）
-SOURCE_TYPE     = "sw"            # "xml" 或 "sw" 二选一
-XML_PATH        = r"F:\Program Files\同花顺远航版\bin\users\mx_713570454\blockstockV3.xml"
-XML_BLOCK_NAME  = "银行"           # xml 里 <Block name="xxx">
-SW_INDEX_CODE   = 801770          # 申万行业指数代码
-BUY_THRESHOLD   = 30
-SELL_THRESHOLD  = 70
-ANALYSIS_DAYS   = 900
-MAX_THREADS     = 10
-CACHE_DIR       = r"D:\stock_cache"
-# ============================================================
 
 # -------------------- 以下代码完全保留你原来的全部逻辑 --------------------
-# 唯一改动：get_stock_data 内部换成“多接口备用”版本
+# 唯一改动：get_stock_data 内部换成"多接口备用"版本，并添加可调节worker参数
 import pandas as pd
 import matplotlib.pyplot as plt
 import akshare as ak
@@ -28,6 +16,12 @@ import mplcursors
 import matplotlib.dates as mdates
 from matplotlib.dates import num2date
 import sys
+import argparse
+
+# 文件顶部先给一个默认路径
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # 当前 .py 所在目录
+CACHE_DIR = os.path.join(BASE_DIR, 'stock_cache')      # 同级 stock_cache 文件夹
+os.makedirs(CACHE_DIR, exist_ok=True)                  # 确保目录存在
 
 # 添加utils_email的导入
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -37,10 +31,17 @@ warnings.filterwarnings('ignore')
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
 plt.rcParams['axes.unicode_minus'] = False
 
-os.makedirs(CACHE_DIR, exist_ok=True)
+# 添加命令行参数解析
+def parse_args():
+    parser = argparse.ArgumentParser(description='申万一级行业60日线分析工具')
+    parser.add_argument('--numworkers', type=int, default=10, 
+                       help='设置并发worker数量，默认10个线程')
+    parser.add_argument('--nocache', action='store_true',
+                       help='不使用缓存，重新下载所有数据')
+    return parser.parse_args()
 
 # ---------- ① 股票代码来源 ----------
-def getcodebyshengwan(symbol=SW_INDEX_CODE):
+def getcodebyshengwan(symbol):
     try:
         df = ak.index_component_sw(symbol=symbol)
         print(f"成功获取申万指数 {symbol} 的成分股数据，共 {len(df)} 只股票")
@@ -64,10 +65,20 @@ def getcodebyxml(xml_path, block_name):
     return []
 
 # ---------- ② 多接口备用 get_stock_data ----------
-def get_stock_data(stock_code, days=ANALYSIS_DAYS):
+def get_stock_data(stock_code, days, use_cache=True, nocache=False):
+    """获取股票数据，支持缓存和多种数据源"""
     pure_code = stock_code[2:]
     cache_file = os.path.join(CACHE_DIR, f"{pure_code}.pkl")
-    if os.path.exists(cache_file):
+    
+    # 如果指定不使用缓存，则删除缓存文件
+    if nocache and os.path.exists(cache_file):
+        try:
+            os.remove(cache_file)
+        except:
+            pass
+    
+    # 优先使用缓存
+    if use_cache and not nocache and os.path.exists(cache_file):
         try:
             df = pd.read_pickle(cache_file)
             if len(df) >= days + 60:
@@ -98,7 +109,7 @@ def get_stock_data(stock_code, days=ANALYSIS_DAYS):
                 break
         except Exception as e:
             print(f"  └─ {src} 失败: {str(e)[:60]}")
-            time.sleep(np.random.uniform(0.1, 0.5))
+            time.sleep(np.random.uniform(0.1, 0.3))  # 减少等待时间
 
     if df is None or df.empty or len(df) < 60:
         return None
@@ -118,7 +129,13 @@ def get_stock_data(stock_code, days=ANALYSIS_DAYS):
     df.set_index('date', inplace=True)
     df['ma60'] = df['close'].rolling(window=60, min_periods=1).mean()
     df['above'] = df['close'] > df['ma60']
-    df.to_pickle(cache_file)
+    
+    # 保存缓存
+    try:
+        df.to_pickle(cache_file)
+    except:
+        pass
+        
     return process_stock_data(df, days)
 
 def process_stock_data(df, days):
@@ -202,33 +219,63 @@ def enhanced_print_ma60_history(history_df):
         print("\n当前状态: 持有观望")
     check_ma60_signal(history_df)
 
-def calculate_ma60_history(stock_codes, days=ANALYSIS_DAYS):
+def calculate_ma60_history(stock_codes, days, max_workers=10):
+    """计算60日线历史数据，支持自定义worker数量"""
     print(f"开始处理 {len(stock_codes)} 只股票...")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-        futures = [executor.submit(lambda c: (c, get_stock_data(c, days)), code) for code in stock_codes]
+    
+    # 使用进度条显示处理进度
+    completed = 0
+    total = len(stock_codes)
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # 提交任务时添加更多上下文信息
+        futures = []
+        for code in stock_codes:
+            future = executor.submit(get_stock_data, code, days, use_cache=True, nocache=False)
+            futures.append((code, future))
+        
         stock_data = {}
-        for f in concurrent.futures.as_completed(futures):
-            code, df = f.result()
-            if df is not None and not df.empty:
-                stock_data[code] = df
-                print(f"成功处理: {code}")
-            else:
-                print(f"处理失败: {code}")
+        for code, future in concurrent.futures.as_completed([f[1] for f in futures]):
+            try:
+                df = future.result(timeout=30)  # 设置超时时间
+                if df is not None and not df.empty:
+                    stock_data[code] = df
+                    print(f"✅ 成功处理: {code}")
+                else:
+                    print(f"❌ 处理失败: {code}")
+            except Exception as e:
+                print(f"❌ 处理异常 {code}: {str(e)[:60]}")
+            
+            # 更新进度
+            completed += 1
+            if completed % 10 == 0 or completed == total:
+                print(f"📈 进度: {completed}/{total} ({completed/total*100:.1f}%)")
+    
     if not stock_data:
         return pd.DataFrame(), {}
+    
+    # 优化日期处理
+    print("📊 正在合并数据...")
     all_dates = sorted({d for df in stock_data.values() for d in df.index})
-    rec = []
+    
+    # 使用向量化操作提高性能
+    records = []
     for d in all_dates:
-        abv = val = 0
-        for df in stock_data.values():
-            if d in df.index:
-                val += 1
-                abv += df.loc[d, 'above']
-        if val:
-            rec.append({'date': d, 'above_ratio': abv/val*100, 'above_count': abv, 'valid_count': val})
-    hist = pd.DataFrame(rec).set_index('date')
+        valid_stocks = [df for df in stock_data.values() if d in df.index]
+        if valid_stocks:
+            above_count = sum(df.loc[d, 'above'] for df in valid_stocks)
+            valid_count = len(valid_stocks)
+            above_ratio = (above_count / valid_count * 100) if valid_count > 0 else 0
+            records.append({
+                'date': d, 
+                'above_ratio': above_ratio, 
+                'above_count': above_count, 
+                'valid_count': valid_count
+            })
+    
+    hist = pd.DataFrame(records).set_index('date')
     hist.index = pd.to_datetime(hist.index)
-    print(f"历史数据范围: {hist.index[0].date()} 至 {hist.index[-1].date()}")
+    print(f"📅 历史数据范围: {hist.index[0].date()} 至 {hist.index[-1].date()}")
     return hist, stock_data
 
 def build_equal_weight_index(stock_data):
@@ -290,20 +337,39 @@ def plot_index_and_ratio(history_df, index_data):
     filename = f'{BLOCK_NAME}_板块分析_{datetime.now().strftime("%Y%m%d")}.png'
     plt.savefig(filename, dpi=300); print(f"图表已保存至: {filename}"); plt.show()
 
-# -------------------- 主入口 --------------------
-if __name__ == "__main__":
-    # 1. 选代码来源
+# ✅ 新增：批量运行所有申万一级行业
+
+sw_index_first_info_df = ak.sw_index_first_info()
+
+for _, row in sw_index_first_info_df.iterrows():
+    industry_code = row['行业代码'].replace('.SI', '')
+    industry_name = row['行业名称']
+
+    print(f"\n🚀 正在处理行业：{industry_name}（{industry_code}）")
+
+    BLOCK_NAME = industry_name
+    SW_INDEX_CODE = int(industry_code)
+    SOURCE_TYPE = "sw"
+    XML_PATH = ""
+    XML_BLOCK_NAME = ""
+    BUY_THRESHOLD = 30
+    SELL_THRESHOLD = 70
+    ANALYSIS_DAYS = 900
+    MAX_THREADS = 10
+    CACHE_DIR = r"D:\stock_cache"
+
+    # 下面是你原来的主程序逻辑
     if SOURCE_TYPE == "xml":
         stock_codes = getcodebyxml(XML_PATH, XML_BLOCK_NAME)
     else:
         stock_codes = getcodebyshengwan(SW_INDEX_CODE)
 
     if not stock_codes:
-        print(f"未找到板块 '{BLOCK_NAME}'")
-        exit()
-    print(f"板块 '{BLOCK_NAME}' 共 {len(stock_codes)} 只股票")
+        print(f"⚠️ 未找到板块 '{BLOCK_NAME}' 的股票，跳过")
+        continue
 
-    # 2. 以下完全是你原来的流程
+    print(f"📊 板块 '{BLOCK_NAME}' 共 {len(stock_codes)} 只股票")
+
     history_df, stock_data = calculate_ma60_history(stock_codes, ANALYSIS_DAYS)
     if not history_df.empty:
         enhanced_print_ma60_history(history_df)
@@ -311,4 +377,4 @@ if __name__ == "__main__":
         if index_data is not None:
             plot_index_and_ratio(history_df, index_data)
     else:
-        print("未能生成有效数据，请检查股票代码和数据源")
+        print("❌ 未能生成有效数据，跳过")
