@@ -1,5 +1,5 @@
 # ==================  用户只用改这一小段  ==================
-BLOCK_NAME      = "银行"           # 板块中文名（任意）
+BLOCK_NAME      = "通信"           # 板块中文名（任意）
 SOURCE_TYPE     = "sw"            # "xml" 或 "sw" 二选一
 XML_PATH        = r"F:\Program Files\同花顺远航版\bin\users\mx_713570454\blockstockV3.xml"
 XML_BLOCK_NAME  = "通信"           # xml 里 <Block name="xxx">

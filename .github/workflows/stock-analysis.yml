@@ -61,38 +61,15 @@ jobs:
       run: |
         # 根据触发方式选择运行参数
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          # 手动触发，使用输入参数
-          python 通信.py <<EOF
-          ${{ github.event.inputs.block_name }}
-          ${{ github.event.inputs.source_type }}
-          EOF
+          # 手动触发，使用输入参数（改为更可靠的方式）
+          python 通信.py "${{ github.event.inputs.block_name }}" "${{ github.event.inputs.source_type }}"
         else
           # 定时触发，使用默认配置
           python 通信.py
         fi
     
     - name: 上传分析结果
-      uses: actions/upload-artifact@v3
-      if: always()
-      with:
-        name: stock-analysis-results-${{ github.run_number }}
-        path: |
-          *.png
-          *.log
-        retention-days: 30
-    
-    - name: 上传分析结果
-      uses: actions/upload-artifact@v3
-      if: always()
-      with:
-        name: stock-analysis-results-${{ github.run_number }}
-        path: |
-          *.png
-          *.log
-        retention-days: 30
-    
-    - name: 上传分析结果
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # 升级到v4版本
       if: always()
       with:
         name: stock-analysis-results-${{ github.run_number }}
