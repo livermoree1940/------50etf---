@@ -23,7 +23,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils_email import send_email_if_signal
 def get_hs300_codes():
     """取沪深300最新成分股（含市场前缀 sh/sz）"""
-    df = ak.index_stock_cons(symbol="000016")          # 中证指数公司接口
+    df = ak.index_stock_cons(symbol="000300")          # 中证指数公司接口
     codes = []
     for _, row in df.iterrows():
         raw = row['品种代码'].zfill(6)
