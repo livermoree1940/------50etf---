@@ -38,7 +38,7 @@ jobs:
     - name: 安装系统依赖
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+        sudo apt-get install -y libglx-mesa0 libgl1-mesa-dri libgl1 libglu1-mesa libxi6 libglib2.0-0 libsm6 libxrender1 libxext6 libgomp1
     
     - name: 缓存pip依赖
       uses: actions/cache@v3
@@ -61,7 +61,7 @@ jobs:
       run: |
         # 根据触发方式选择运行参数
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          # 手动触发，使用输入参数（改为更可靠的方式）
+          # 手动触发，使用输入参数（直接传递命令行参数）
           python 通信.py "${{ github.event.inputs.block_name }}" "${{ github.event.inputs.source_type }}"
         else
           # 定时触发，使用默认配置
@@ -69,7 +69,7 @@ jobs:
         fi
     
     - name: 上传分析结果
-      uses: actions/upload-artifact@v4  # 升级到v4版本
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: stock-analysis-results-${{ github.run_number }}
