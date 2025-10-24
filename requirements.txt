@@ -1,16 +1,16 @@
 # ===== 数据与计算 =====
-akshare       # A 股/指数数据主接口
-pandas     # 数据处理
-numpy         # 数值计算
+akshare>=1.17.71,<2.0.0       # A 股/指数数据主接口
+pandas>=1.5.0,<2.0.0          # 数据处理
+numpy>=1.21.0,<1.24.0         # 数值计算
 
 # ===== 可视化 =====
-matplotlib     # 绘图
-mplcursors     # 交互光标（plt  hover）
+matplotlib>=3.5.0,<3.9.0      # 绘图
+mplcursors>=0.5.0,<0.8.0      # 交互光标（plt hover）
 
-# ===== 并发 & 工具 =====
-concurrent.futures    # Python 3 内置，无需单独安装
-lxml           # 解析同花顺 xml 用
-python-dateutil # 日期处理
+# ===== 工具库 =====
+lxml>=4.6.0,<5.0.0            # 解析同花顺 xml 用
+python-dateutil>=2.8.0,<3.0.0 # 日期处理
 
-# ===== 邮件 =====
-# 依赖 Python 标准库 smtplib / email，无需额外包
+# ===== 并发 & 邮件 =====
+# concurrent.futures: Python 3.2+ 标准库，无需安装[1](@ref)[2](@ref)
+# smtplib/email: Python 标准库，无需额外安装[5](@ref)[7](@ref)
