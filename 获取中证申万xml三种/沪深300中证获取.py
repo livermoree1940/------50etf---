@@ -14,6 +14,129 @@ import traceback
 import mplcursors  # 添加交互式光标支持
 import matplotlib.dates as mdates
 from matplotlib.dates import num2date
+import os
+import sys
+from datetime import datetime, timedelta
+zhongzhzhishu="000688"
+# 科创50 000688  沪深300  000300
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from utils_email import send_email_if_signal
+def get_hs300_codes():
+    """取沪深300最新成分股（含市场前缀 sh/sz）"""
+    df = ak.index_stock_cons(symbol=zhongzhzhishu)          # 中证指数公司接口
+    codes = []
+    for _, row in df.iterrows():
+        raw = row['品种代码'].zfill(6)
+        pre = 'sh' if raw.startswith('6') else 'sz'
+        codes.append(f"{pre}{raw}")
+    print(f"已获取沪深300成分股 {len(codes)} 只")
+    return codes
+def check_ma60_signal(history_df):
+    """检查60日线比例变化并触发邮件预警"""
+    if len(history_df) < 2:
+        print("数据不足，无法进行信号判断")
+        return
+    
+    # 获取最新两天数据
+    latest_data = history_df.iloc[-1]
+    prev_data = history_df.iloc[-2]
+    
+    latest_ratio = latest_data['above_ratio']
+    prev_ratio = prev_data['above_ratio']
+    latest_date = history_df.index[-1].strftime('%Y-%m-%d')
+    prev_date = history_df.index[-2].strftime('%Y-%m-%d')
+    
+    print(f"\n信号检测结果:")
+    print(f"前一日 ({prev_date}): {prev_ratio:.1f}%")
+    print(f"最新日 ({latest_date}): {latest_ratio:.1f}%")
+    print(f"买入阈值: {BUY_THRESHOLD}%, 卖出阈值: {SELL_THRESHOLD}%")
+    
+    # 买入信号：前一天＜阈值，最新一天≥阈值
+    if prev_ratio < BUY_THRESHOLD and latest_ratio >= BUY_THRESHOLD:
+        subject = f"【买入信号】{BLOCK_NAME}板块60日线比例转强"
+        message = f"""
+        {BLOCK_NAME}板块出现60日线比例买入信号：
+        
+        统计日期：{latest_date}
+        站上60日线比例：{latest_ratio:.1f}% （前一日：{prev_ratio:.1f}%）
+        信号说明：比例由低于{BUY_THRESHOLD}%转为达到或超过{BUY_THRESHOLD}%
+        
+        当前状态：★★★ 买入机会 ★★★
+        有效股票数量：{latest_data['above_count']}/{latest_data['valid_count']}
+        
+        策略建议：考虑分批建仓，控制仓位风险
+        """
+        
+        # 生成图表文件路径
+        image_path = f'{BLOCK_NAME}_板块分析_{datetime.now().strftime("%Y%m%d")}.png'
+        
+        print(f"🚨 买入信号触发！比例从 {prev_ratio:.1f}% 升至 {latest_ratio:.1f}%")
+        send_email_if_signal(message, image_path)
+    
+    # 卖出信号：前一天＞阈值，最新一天≤阈值
+    elif prev_ratio > SELL_THRESHOLD and latest_ratio <= SELL_THRESHOLD:
+        subject = f"【卖出信号】{BLOCK_NAME}板块60日线比例转弱"
+        message = f"""
+        {BLOCK_NAME}板块出现60日线比例卖出信号：
+        
+        统计日期：{latest_date}
+        站上60日线比例：{latest_ratio:.1f}% （前一日：{prev_ratio:.1f}%）
+        信号说明：比例由高于{SELL_THRESHOLD}%转为达到或低于{SELL_THRESHOLD}%
+        
+        当前状态：★★★ 卖出信号 ★★★
+        有效股票数量：{latest_data['above_count']}/{latest_data['valid_count']}
+        
+        策略建议：考虑减仓或止盈，控制回撤风险
+        """
+        
+        # 生成图表文件路径
+        image_path = f'{BLOCK_NAME}_板块分析_{datetime.now().strftime("%Y%m%d")}.png'
+        
+        print(f"🚨 卖出信号触发！比例从 {prev_ratio:.1f}% 降至 {latest_ratio:.1f}%")
+        send_email_if_signal(message, image_path)
+    
+    else:
+        print("📊 无信号触发，继续观望")
+        
+        # 输出当前状态分析
+        if latest_ratio < BUY_THRESHOLD:
+            print(f"💚 当前处于低位区域 ({latest_ratio:.1f}% < {BUY_THRESHOLD}%)")
+        elif latest_ratio > SELL_THRESHOLD:
+            print(f"🔴 当前处于高位区域 ({latest_ratio:.1f}% > {SELL_THRESHOLD}%)")
+        else:
+            print(f"🟡 当前处于中性区域 ({BUY_THRESHOLD}% ≤ {latest_ratio:.1f}% ≤ {SELL_THRESHOLD}%)")
+
+def enhanced_print_ma60_history(history_df):
+    """增强版统计结果打印，包含信号检测"""
+    if history_df.empty:
+        print("无有效数据")
+        return
+        
+    print(f"\n{BLOCK_NAME}板块60日均线位置历史变化:")
+    print("日期\t\t站上比例\t站上数量/有效数量")
+    print("-" * 50)
+    
+    for date, row in history_df.tail(20).iterrows():
+        print(f"{date.strftime('%Y-%m-%d')}\t{row['above_ratio']:.1f}%\t{row['above_count']}/{row['valid_count']}")
+    
+    avg_ratio = history_df['above_ratio'].mean()
+    latest_ratio = history_df.iloc[-1]['above_ratio']
+    current_date = datetime.now().strftime("%m%d")
+    
+    print(f"\n统计周期: {history_df.index[0].strftime('%Y-%m-%d')} 至 {history_df.index[-1].strftime('%Y-%m-%d')}")
+    print(f"平均站上60日线比例: {avg_ratio:.1f}%")
+    print(f"{current_date} 涨跌比 {int(latest_ratio)}:{int(100-latest_ratio)}")
+    print(f"最高比例: {history_df['above_ratio'].max():.1f}%, 最低比例: {history_df['above_ratio'].min():.1f}%")
+    
+    if latest_ratio < BUY_THRESHOLD:
+        print(f"\n当前状态: ★★★ 买入机会 (低于{BUY_THRESHOLD}%) ★★★")
+    elif latest_ratio > SELL_THRESHOLD:
+        print(f"\n当前状态: ★★★ 卖出信号 (高于{SELL_THRESHOLD}%) ★★★")
+    else:
+        print("\n当前状态: 持有观望")
+    
+    # 添加信号检测
+    check_ma60_signal(history_df)
 
 # 忽略警告
 warnings.filterwarnings('ignore')
@@ -21,9 +144,9 @@ warnings.filterwarnings('ignore')
 # 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
 plt.rcParams['axes.unicode_minus'] = False
-shengwan=801950
+
 XML_PATH = r"F:\Program Files\同花顺远航版\bin\users\mx_713570454\blockstockV3.xml"
-BLOCK_NAME = "煤炭"
+BLOCK_NAME = "银行"
 ANALYSIS_DAYS = 900
 MAX_THREADS = 10
 BUY_THRESHOLD = 30
@@ -51,7 +174,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 #     return []
 #     通过akshare 的 api 输入为申万银行指数
 
-def getcodebyshengwan(symbol=shengwan):
+def getcodebyshengwan(symbol=801780):
     
     try:
         # 调用AKShare接口获取成分股数据
@@ -440,16 +563,14 @@ def print_ma60_history(history_df):
         print("\n当前状态: 持有观望")
 
 if __name__ == "__main__":
-    # stock_codes = getcodebyxml(XML_PATH, BLOCK_NAME)
-    stock_codes = getcodebyshengwan(symbol=shengwan)
+    # 1. 换成沪深300
+    stock_codes = get_hs300_codes()
 
     if not stock_codes:
-        print(f"未找到板块 '{BLOCK_NAME}'")
+        print("沪深300成分股获取失败")
         exit()
-    
-    print(f"板块 '{BLOCK_NAME}' 包含 {len(stock_codes)} 只股票")
-    
-    test_code = stock_codes[0]
+
+    test_code = stock_codes
     print(f"\n测试获取股票数据: {test_code}")
     test_df = get_stock_data(test_code, ANALYSIS_DAYS)
     if test_df is not None:
@@ -462,7 +583,8 @@ if __name__ == "__main__":
     history_df, stock_data = calculate_ma60_history(stock_codes, ANALYSIS_DAYS)
     
     if not history_df.empty:
-        print_ma60_history(history_df)
+        # 使用增强版打印函数（包含信号检测）
+        enhanced_print_ma60_history(history_df)
         index_data = build_equal_weight_index(stock_data)
         if index_data is not None:
             plot_index_and_ratio(history_df, index_data)

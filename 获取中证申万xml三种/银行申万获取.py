@@ -21,16 +21,7 @@ from datetime import datetime, timedelta
 # 添加utils_email的导入
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils_email import send_email_if_signal
-def get_hs300_codes():
-    """取沪深300最新成分股（含市场前缀 sh/sz）"""
-    df = ak.index_stock_cons(symbol="000300")          # 中证指数公司接口
-    codes = []
-    for _, row in df.iterrows():
-        raw = row['品种代码'].zfill(6)
-        pre = 'sh' if raw.startswith('6') else 'sz'
-        codes.append(f"{pre}{raw}")
-    print(f"已获取沪深300成分股 {len(codes)} 只")
-    return codes
+
 def check_ma60_signal(history_df):
     """检查60日线比例变化并触发邮件预警"""
     if len(history_df) < 2:
@@ -146,7 +137,18 @@ plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
 plt.rcParams['axes.unicode_minus'] = False
 
 XML_PATH = r"F:\Program Files\同花顺远航版\bin\users\mx_713570454\blockstockV3.xml"
-BLOCK_NAME = "银行"
+BLOCK_NAME = "医药生物"
+BLOCK_CODE = 801950
+#SW_L1_MAP = {
+#     801010: "农林牧渔", 801020: "采掘", 801030: "化工", 801040: "钢铁",
+#     801050: "有色金属", 801080: "电子", 801110: "家用电器", 801120: "食品饮料",
+#     801130: "纺织服装", 801140: "轻工制造", 801150: "医药生物", 801160: "公用事业",
+#     801170: "交通运输", 801180: "房地产", 801200: "商业贸易", 801210: "休闲服务",
+#     801230: "综合", 801710: "建筑材料", 801720: "建筑装饰", 801730: "电气设备",
+#     801740: "国防军工", 801750: "计算机", 801760: "传媒", 801770: "通信",
+#     801780: "银行", 801790: "非银金融", 801880: "汽车", 801890: "机械设备"，
+#     801950:  "煤炭"
+# }
 ANALYSIS_DAYS = 900
 MAX_THREADS = 10
 BUY_THRESHOLD = 30
@@ -174,7 +176,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 #     return []
 #     通过akshare 的 api 输入为申万银行指数
 
-def getcodebyshengwan(symbol=801780):
+def getcodebyshengwan(symbol=BLOCK_CODE):
     
     try:
         # 调用AKShare接口获取成分股数据
@@ -563,13 +565,15 @@ def print_ma60_history(history_df):
         print("\n当前状态: 持有观望")
 
 if __name__ == "__main__":
-    # 1. 换成沪深300
-    stock_codes = get_hs300_codes()
+    # stock_codes = getcodebyxml(XML_PATH, BLOCK_NAME)
+    stock_codes = getcodebyshengwan(symbol=BLOCK_CODE)
 
     if not stock_codes:
-        print("沪深300成分股获取失败")
+        print(f"未找到板块 '{BLOCK_NAME}'")
         exit()
-
+    
+    print(f"板块 '{BLOCK_NAME}' 包含 {len(stock_codes)} 只股票")
+    
     test_code = stock_codes
     print(f"\n测试获取股票数据: {test_code}")
     test_df = get_stock_data(test_code, ANALYSIS_DAYS)
